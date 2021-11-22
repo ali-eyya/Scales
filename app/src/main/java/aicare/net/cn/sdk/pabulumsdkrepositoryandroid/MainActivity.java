@@ -1,10 +1,14 @@
 package aicare.net.cn.sdk.pabulumsdkrepositoryandroid;
 
 import android.Manifest;
+import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothClass;
 import android.bluetooth.BluetoothDevice;
+import android.content.BroadcastReceiver;
+import android.content.Context;
 import android.content.DialogInterface;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.pm.PackageManager;
 import android.net.Uri;
 import android.os.Bundle;
@@ -28,10 +32,11 @@ import androidx.core.content.ContextCompat;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Random;
+import java.util.Set;
+import java.util.UUID;
 
 import aicare.net.cn.sdk.pabulumsdkrepositoryandroid.base.BaseActivity;
 import aicare.net.cn.sdk.pabulumsdkrepositoryandroid.utils.AppUtils;
-import aicare.net.cn.sdk.pabulumsdkrepositoryandroid.utils.BT201;
 import aicare.net.cn.sdk.pabulumsdkrepositoryandroid.utils.Config;
 import aicare.net.cn.sdk.pabulumsdkrepositoryandroid.utils.SPUtils;
 import aicare.net.cn.sdk.pabulumsdkrepositoryandroid.utils.T;
@@ -42,7 +47,6 @@ import butterknife.OnCheckedChanged;
 import butterknife.OnClick;
 import cn.net.aicare.pabulumlibrary.PabulumSDK;
 import cn.net.aicare.pabulumlibrary.bleprofile.BleProfileService;
-import cn.net.aicare.pabulumlibrary.bleprofile.BleProfileServiceReadyActivity;
 import cn.net.aicare.pabulumlibrary.entity.FoodData;
 import cn.net.aicare.pabulumlibrary.pabulum.PabulumService;
 import cn.net.aicare.pabulumlibrary.utils.L;
@@ -329,11 +333,47 @@ public class MainActivity extends BaseActivity implements SetRssiDialog.OnQueryL
     /**
      * Test
      */
-    BT201 bt201 = new BT201();
-    ArrayList<String> array;
+    ArrayList<String> mArrayAdapter = new ArrayList<>();
+    BluetoothAdapter mBtAdapter = BluetoothAdapter.getDefaultAdapter();
+
+    public ArrayList<String> getPairedDevices() {
+        Set<BluetoothDevice> pairedDevices = mBtAdapter.getBondedDevices();
+        // If there are paired devices
+        if (pairedDevices.size() > 0) {
+            // Loop through paired devices
+            for (BluetoothDevice device : pairedDevices) {
+                // Add the name and address to an array adapter to show in a ListView
+                mArrayAdapter.add(device.getName() + "\n" + device.getAddress());
+            }
+        }
+        return mArrayAdapter;
+    }
+
+    private final BroadcastReceiver mReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            try {
+                String action = intent.getAction();
+
+                // When discovery finds a device
+                if (BluetoothDevice.ACTION_FOUND.equals(action)) {
+                    // Get the BluetoothDevice object from the Intent
+                    BluetoothDevice device = intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE);
+
+                    String deviceName = device.getName();
+                    String deviceAddress = device.getAddress();
+                    System.out.println("**************" + deviceName);
+                    System.out.println("Address : " + deviceAddress);
+
+                }
+            } catch (Exception e) {
+                System.out.println("Broadcast Error : " + e.toString());
+            }
+        }
+    };
     /**
-    * /Test
-    */
+     * /Test
+     */
 
 
     /**
@@ -355,16 +395,32 @@ public class MainActivity extends BaseActivity implements SetRssiDialog.OnQueryL
         }
         if (ensureBLESupported()) {//判断设备是否支持BLE，true（支持），反之则反。
             initPermissions();
-            /**
-             * Test
-             */
-            array = bt201.getPairedDevices();
-            /**
-             * /Test
-             */
         }
+        /**
+         * Test
+         */
+        // Register for broadcasts when a device is discovered
+        IntentFilter filter = new IntentFilter(BluetoothDevice.ACTION_FOUND);
+        this.registerReceiver(mReceiver, filter);
+        // Register for broadcasts when discovery has finished
+        filter = new IntentFilter(BluetoothAdapter.ACTION_DISCOVERY_FINISHED);
+        this.registerReceiver(mReceiver, filter);
+        filter = new IntentFilter(BluetoothAdapter.ACTION_DISCOVERY_STARTED);
+        this.registerReceiver(mReceiver, filter);
+        // Get the local Bluetooth adapter
+        mBtAdapter = BluetoothAdapter.getDefaultAdapter();
+        if (!mBtAdapter.isEnabled()) {
+            Intent enableBtIntent = new Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE);
+            startActivityForResult(enableBtIntent, REQUEST_ENABLE_BT);
+        }
+        mBtAdapter.startDiscovery();
+        /**
+         * /Test
+         */
+
         reset();
     }
+
 
     private void initData() {
         defaultRssi = (int) SPUtils.get(this, Config.DEFAULT_RSSI, DEFAULT_RSSI);
@@ -572,6 +628,8 @@ public class MainActivity extends BaseActivity implements SetRssiDialog.OnQueryL
 
     @Override
     protected void onLeScanCallback(BluetoothDevice device, int rssi) {
+        System.out.println("*************" + device.getName());
+
         if (rssi >= defaultRssi) {
             connectDevice(device);
         }
